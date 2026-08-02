@@ -1,0 +1,18 @@
+{
+  "name": "نزدیک چت",
+  "short_name": "نزدیک چت",
+  "description": "چت با افراد نزدیک برای ازدواج، شغل و مشورت",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f7",
+  "theme_color": "#2f6f4e",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/static/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
