@@ -1,6 +1,11 @@
 {% extends "base.html" %} {% block title %}چت با {{ other.username }}{% endblock %} {% block content %}
 → بازگشت
 چت با {{ other.username }}
+🚩 گزارش 🚫 {{ 'رفع بلاک' if blocked else 'بلاک کردن' }}
+{% if blocked %}
+این ارتباط بلاک شده است و امکان ارسال پیام وجود ندارد.
+
+{% endif %}
 پیام خود را بنویس...
  ارسال
 {% endblock %}
