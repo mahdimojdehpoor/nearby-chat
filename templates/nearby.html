@@ -1,13 +1,100 @@
-{% extends "base.html" %} {% block title %}افراد نزدیک{% endblock %} {% block content %}
-سلام {{ user.username }} 👋
-{{ user.bio or "بیوگرافی‌ای ثبت نکرده‌ای." }}
+{% extends "base.html" %}
+{% block title %}افراد نزدیک{% endblock %}
+{% block content %}
+<div class="card">
+    <h1>سلام {{ user.username }} 👋</h1>
+    <p class="muted">{{ user.bio or "بیوگرافی‌ای ثبت نکرده‌ای." }}</p>
 
-دسترسی به موقعیت مکانی رد شد یا در دسترس نیست.
-شعاع جستجو (کیلومتر): 
- 10
-هدف مورد نظر: 
-همه
-افراد نزدیک
-مدیریت کاربران بلاک‌شده
+    <div id="status" class="status">در حال دریافت موقعیت مکانی...</div>
 
+    <div class="radius-row">
+        <label for="radius">شعاع جستجو (کیلومتر):</label>
+        <input type="range" id="radius" min="1" max="50" value="10">
+        <span id="radius-val">10</span>
+    </div>
+
+    <label for="goal-filter">هدف مورد نظر:</label>
+    <select id="goal-filter">
+        <option value="all">همه</option>
+        {% for key, label in goals.items() %}
+        <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+    </select>
+
+    <h2>افراد نزدیک</h2>
+    <ul id="nearby-list" class="nearby-list"></ul>
+    <p class="muted small"><a href="{{ url_for('blocked_list') }}">مدیریت کاربران بلاک‌شده</a></p>
+</div>
+
+<script>
+const statusEl = document.getElementById('status');
+const listEl = document.getElementById('nearby-list');
+const radiusInput = document.getElementById('radius');
+const radiusVal = document.getElementById('radius-val');
+const goalFilter = document.getElementById('goal-filter');
+
+radiusInput.addEventListener('input', () => {
+    radiusVal.textContent = radiusInput.value;
+    fetchNearby();
+});
+goalFilter.addEventListener('change', fetchNearby);
+
+function sendLocation(lat, lng) {
+    fetch('/api/location', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({lat, lng})
+    }).then(() => {
+        statusEl.textContent = 'موقعیت مکانی به‌روزرسانی شد ✅';
+        fetchNearby();
+    }).catch(() => {
+        statusEl.textContent = 'خطا در ارسال موقعیت مکانی';
+    });
+}
+
+function trackLocation() {
+    if (!navigator.geolocation) {
+        statusEl.textContent = 'مرورگر شما از موقعیت مکانی پشتیبانی نمی‌کند.';
+        return;
+    }
+    navigator.geolocation.getCurrentPosition(
+        pos => sendLocation(pos.coords.latitude, pos.coords.longitude),
+        err => { statusEl.textContent = 'دسترسی به موقعیت مکانی رد شد یا در دسترس نیست.'; },
+        {enableHighAccuracy: true}
+    );
+}
+
+function fetchNearby() {
+    const radius = radiusInput.value;
+    const goal = goalFilter.value;
+    fetch(`/api/nearby?radius_km=${radius}&goal=${goal}`)
+        .then(r => r.json())
+        .then(data => {
+            if (!data.ok) {
+                listEl.innerHTML = `<li class="muted">${data.error}</li>`;
+                return;
+            }
+            if (data.users.length === 0) {
+                listEl.innerHTML = '<li class="muted">فردی در این شعاع پیدا نشد.</li>';
+                return;
+            }
+            listEl.innerHTML = data.users.map(u => `
+                <li class="nearby-item">
+                    <div>
+                        <span class="dot ${u.online ? 'online' : 'offline'}"></span>
+                        <strong>${u.username}</strong>
+                        <span class="badge">${u.goal_label}</span>
+                        <div class="muted small">${u.bio || ''}</div>
+                        <div class="muted small">${u.distance_km} کیلومتر فاصله</div>
+                    </div>
+                    <a class="btn" href="/chat/${u.id}">چت</a>
+                </li>
+            `).join('');
+        });
+}
+
+trackLocation();
+setInterval(trackLocation, 20000);
+setInterval(fetchNearby, 5000);
+</script>
 {% endblock %}
