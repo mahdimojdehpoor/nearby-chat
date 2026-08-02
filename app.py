@@ -21,6 +21,14 @@ from werkzeug.security import generate_password_hash, check_password_hash
 DATABASE = "nearby_chat.db"
 ONLINE_THRESHOLD_SECONDS = 90  # اگر کاربر تا این مدت پینگ نزند، آفلاین در نظر گرفته می‌شود
 
+# اهداف قابل انتخاب کاربر هنگام ثبت‌نام
+GOAL_LABELS = {
+    "friend": "دوستیابی / آشنایی عمومی",
+    "marriage": "آشنایی برای ازدواج",
+    "job": "فرصت شغلی / همکاری",
+    "consult": "مشورت / ایده‌پردازی",
+}
+
 app = Flask(__name__)
 app.secret_key = "change-this-secret-key-in-production"
 
@@ -53,6 +61,7 @@ def init_db():
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 bio TEXT DEFAULT '',
+                goal TEXT DEFAULT 'friend',
                 lat REAL,
                 lng REAL,
                 last_seen REAL DEFAULT 0
@@ -66,10 +75,31 @@ def init_db():
                 created_at REAL NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS blocks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                blocker_id INTEGER NOT NULL,
+                blocked_id INTEGER NOT NULL,
+                created_at REAL NOT NULL,
+                UNIQUE(blocker_id, blocked_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reporter_id INTEGER NOT NULL,
+                reported_id INTEGER NOT NULL,
+                reason TEXT NOT NULL,
+                created_at REAL NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_messages_room ON messages(room);
             """
         )
         db.commit()
+        # افزودن ستون goal برای دیتابیس‌های قدیمی‌تر که از قبل ساخته شده‌اند
+        cols = [row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()]
+        if "goal" not in cols:
+            db.execute("ALTER TABLE users ADD COLUMN goal TEXT DEFAULT 'friend'")
+            db.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -107,6 +137,30 @@ def current_user():
     return db.execute("SELECT * FROM users WHERE id = ?", (session["user_id"],)).fetchone()
 
 
+def blocked_pair_ids(user_id):
+    """آی‌دی‌هایی که کاربر بلاک کرده یا کاربر را بلاک کرده‌اند (در هر دو جهت)"""
+    db = get_db()
+    rows = db.execute(
+        "SELECT blocker_id, blocked_id FROM blocks WHERE blocker_id = ? OR blocked_id = ?",
+        (user_id, user_id),
+    ).fetchall()
+    ids = set()
+    for r in rows:
+        ids.add(r["blocker_id"])
+        ids.add(r["blocked_id"])
+    ids.discard(user_id)
+    return ids
+
+
+def is_blocked_either_way(user_a, user_b):
+    db = get_db()
+    row = db.execute(
+        "SELECT 1 FROM blocks WHERE (blocker_id = ? AND blocked_id = ?) OR (blocker_id = ? AND blocked_id = ?)",
+        (user_a, user_b, user_b, user_a),
+    ).fetchone()
+    return row is not None
+
+
 # ---------------------------------------------------------------------------
 # صفحات (Auth)
 # ---------------------------------------------------------------------------
@@ -118,6 +172,9 @@ def register():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         bio = request.form.get("bio", "").strip()
+        goal = request.form.get("goal", "friend")
+        if goal not in GOAL_LABELS:
+            goal = "friend"
 
         if not username or not password:
             error = "نام کاربری و رمز عبور الزامی است."
@@ -128,14 +185,14 @@ def register():
                 error = "این نام کاربری قبلاً استفاده شده است."
             else:
                 db.execute(
-                    "INSERT INTO users (username, password_hash, bio, last_seen) VALUES (?, ?, ?, ?)",
-                    (username, generate_password_hash(password), bio, time.time()),
+                    "INSERT INTO users (username, password_hash, bio, goal, last_seen) VALUES (?, ?, ?, ?, ?)",
+                    (username, generate_password_hash(password), bio, goal, time.time()),
                 )
                 db.commit()
                 user = db.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
                 session["user_id"] = user["id"]
                 return redirect(url_for("nearby"))
-    return render_template("register.html", error=error)
+    return render_template("register.html", error=error, goals=GOAL_LABELS)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -170,7 +227,7 @@ def logout():
 @login_required
 def nearby():
     user = current_user()
-    return render_template("nearby.html", user=user)
+    return render_template("nearby.html", user=user, goals=GOAL_LABELS)
 
 
 @app.route("/api/location", methods=["POST"])
@@ -193,19 +250,26 @@ def update_location():
 @login_required
 def api_nearby():
     radius_km = float(request.args.get("radius_km", 10))
+    goal_filter = request.args.get("goal", "all")
     db = get_db()
     me = current_user()
     if me["lat"] is None or me["lng"] is None:
         return jsonify({"ok": False, "error": "موقعیت مکانی شما هنوز ثبت نشده است."}), 400
 
+    excluded = blocked_pair_ids(me["id"])
+
     rows = db.execute(
-        "SELECT id, username, bio, lat, lng, last_seen FROM users WHERE id != ? AND lat IS NOT NULL AND lng IS NOT NULL",
+        "SELECT id, username, bio, goal, lat, lng, last_seen FROM users WHERE id != ? AND lat IS NOT NULL AND lng IS NOT NULL",
         (me["id"],),
     ).fetchall()
 
     now = time.time()
     result = []
     for r in rows:
+        if r["id"] in excluded:
+            continue
+        if goal_filter != "all" and r["goal"] != goal_filter:
+            continue
         dist = haversine_km(me["lat"], me["lng"], r["lat"], r["lng"])
         if dist <= radius_km:
             result.append(
@@ -213,12 +277,73 @@ def api_nearby():
                     "id": r["id"],
                     "username": r["username"],
                     "bio": r["bio"],
+                    "goal": r["goal"],
+                    "goal_label": GOAL_LABELS.get(r["goal"], r["goal"]),
                     "distance_km": round(dist, 2),
                     "online": (now - r["last_seen"]) < ONLINE_THRESHOLD_SECONDS,
                 }
             )
     result.sort(key=lambda x: x["distance_km"])
     return jsonify({"ok": True, "users": result})
+
+
+# ---------------------------------------------------------------------------
+# گزارش و بلاک‌کردن کاربر
+# ---------------------------------------------------------------------------
+
+@app.route("/api/block/<int:other_id>", methods=["POST"])
+@login_required
+def block_user(other_id):
+    if other_id == session["user_id"]:
+        return jsonify({"ok": False, "error": "نمی‌توانید خودتان را بلاک کنید."}), 400
+    db = get_db()
+    db.execute(
+        "INSERT OR IGNORE INTO blocks (blocker_id, blocked_id, created_at) VALUES (?, ?, ?)",
+        (session["user_id"], other_id, time.time()),
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/unblock/<int:other_id>", methods=["POST"])
+@login_required
+def unblock_user(other_id):
+    db = get_db()
+    db.execute(
+        "DELETE FROM blocks WHERE blocker_id = ? AND blocked_id = ?",
+        (session["user_id"], other_id),
+    )
+    db.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/blocked")
+@login_required
+def blocked_list():
+    db = get_db()
+    rows = db.execute(
+        """SELECT u.id, u.username FROM blocks b
+           JOIN users u ON u.id = b.blocked_id
+           WHERE b.blocker_id = ?""",
+        (session["user_id"],),
+    ).fetchall()
+    return render_template("blocked.html", blocked_users=rows)
+
+
+@app.route("/api/report/<int:other_id>", methods=["POST"])
+@login_required
+def report_user(other_id):
+    data = request.get_json(force=True) or {}
+    reason = (data.get("reason") or "").strip()
+    if not reason:
+        return jsonify({"ok": False, "error": "دلیل گزارش را بنویسید."}), 400
+    db = get_db()
+    db.execute(
+        "INSERT INTO reports (reporter_id, reported_id, reason, created_at) VALUES (?, ?, ?, ?)",
+        (session["user_id"], other_id, reason, time.time()),
+    )
+    db.commit()
+    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +357,10 @@ def chat(other_id):
     other = db.execute("SELECT * FROM users WHERE id = ?", (other_id,)).fetchone()
     if other is None:
         return redirect(url_for("nearby"))
-    return render_template("chat.html", other=other, room=room_name(session["user_id"], other_id))
+    blocked = is_blocked_either_way(session["user_id"], other_id)
+    return render_template(
+        "chat.html", other=other, room=room_name(session["user_id"], other_id), blocked=blocked
+    )
 
 
 @app.route("/api/messages/<room>", methods=["GET"])
@@ -272,6 +400,13 @@ def post_message(room):
     body = (data.get("body") or "").strip()
     if not body:
         return jsonify({"ok": False, "error": "empty message"}), 400
+    try:
+        a, b = room.split("_")
+        other_id = int(b) if int(a) == session["user_id"] else int(a)
+        if is_blocked_either_way(session["user_id"], other_id):
+            return jsonify({"ok": False, "error": "این ارتباط بلاک شده است."}), 403
+    except (ValueError, IndexError):
+        pass
     db = get_db()
     now = time.time()
     db.execute(
