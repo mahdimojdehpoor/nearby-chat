@@ -1,2 +1,28 @@
-📍 نزدیک‌چت {% if session.get('user_id') %} خروج {% endif %}
-{% block content %}{% endblock %}
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}چت افراد نزدیک{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
+    <meta name="theme-color" content="#2f6f4e">
+    <link rel="icon" href="{{ url_for('static', filename='icons/icon.svg') }}">
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="{{ url_for('nearby') }}">📍 نزدیک‌چت</a>
+        {% if session.get('user_id') %}
+        <a class="logout" href="{{ url_for('logout') }}">خروج</a>
+        {% endif %}
+    </header>
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register("{{ url_for('static', filename='sw.js') }}");
+        }
+    </script>
+</body>
+</html>
