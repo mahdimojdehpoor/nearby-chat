@@ -19,9 +19,8 @@ from flask import Flask, g, render_template, request, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
 DATABASE = "nearby_chat.db"
-ONLINE_THRESHOLD_SECONDS = 90  # اگر کاربر تا این مدت پینگ نزند، آفلاین در نظر گرفته می‌شود
+ONLINE_THRESHOLD_SECONDS = 90
 
-# اهداف قابل انتخاب کاربر هنگام ثبت‌نام
 GOAL_LABELS = {
     "friend": "دوستیابی / آشنایی عمومی",
     "marriage": "آشنایی برای ازدواج",
@@ -32,10 +31,6 @@ GOAL_LABELS = {
 app = Flask(__name__)
 app.secret_key = "change-this-secret-key-in-production"
 
-
-# ---------------------------------------------------------------------------
-# دیتابیس
-# ---------------------------------------------------------------------------
 
 def get_db():
     if "db" not in g:
@@ -95,19 +90,13 @@ def init_db():
             """
         )
         db.commit()
-        # افزودن ستون goal برای دیتابیس‌های قدیمی‌تر که از قبل ساخته شده‌اند
         cols = [row["name"] for row in db.execute("PRAGMA table_info(users)").fetchall()]
         if "goal" not in cols:
             db.execute("ALTER TABLE users ADD COLUMN goal TEXT DEFAULT 'friend'")
             db.commit()
 
 
-# ---------------------------------------------------------------------------
-# ابزارها
-# ---------------------------------------------------------------------------
-
 def haversine_km(lat1, lng1, lat2, lng2):
-    """فاصله‌ی بین دو نقطه جغرافیایی بر حسب کیلومتر"""
     r = 6371.0
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -138,7 +127,6 @@ def current_user():
 
 
 def blocked_pair_ids(user_id):
-    """آی‌دی‌هایی که کاربر بلاک کرده یا کاربر را بلاک کرده‌اند (در هر دو جهت)"""
     db = get_db()
     rows = db.execute(
         "SELECT blocker_id, blocked_id FROM blocks WHERE blocker_id = ? OR blocked_id = ?",
@@ -160,10 +148,6 @@ def is_blocked_either_way(user_a, user_b):
     ).fetchone()
     return row is not None
 
-
-# ---------------------------------------------------------------------------
-# صفحات (Auth)
-# ---------------------------------------------------------------------------
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
@@ -218,10 +202,6 @@ def logout():
     session.clear()
     return redirect(url_for("login"))
 
-
-# ---------------------------------------------------------------------------
-# صفحه اصلی: لیست افراد نزدیک
-# ---------------------------------------------------------------------------
 
 @app.route("/")
 @login_required
@@ -287,10 +267,6 @@ def api_nearby():
     return jsonify({"ok": True, "users": result})
 
 
-# ---------------------------------------------------------------------------
-# گزارش و بلاک‌کردن کاربر
-# ---------------------------------------------------------------------------
-
 @app.route("/api/block/<int:other_id>", methods=["POST"])
 @login_required
 def block_user(other_id):
@@ -345,10 +321,6 @@ def report_user(other_id):
     db.commit()
     return jsonify({"ok": True})
 
-
-# ---------------------------------------------------------------------------
-# چت
-# ---------------------------------------------------------------------------
 
 @app.route("/chat/<int:other_id>")
 @login_required
