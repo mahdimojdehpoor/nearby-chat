@@ -1,0 +1,13 @@
+{% extends "base.html" %} {% block title %}کاربران بلاک‌شده{% endblock %} {% block content %}
+→ بازگشت
+
+کاربران بلاک‌شده
+{% if blocked_users|length == 0 %}
+هیچ کاربری را بلاک نکرده‌اید.
+
+{% else %}
+{% for u in blocked_users %}
+{{ u.username }} رفع بلاک
+{% endfor %}
+{% endif %}
+{% endblock %}
