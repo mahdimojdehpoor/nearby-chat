@@ -1,0 +1,9 @@
+{% extends "base.html" %} {% block title %}افراد نزدیک{% endblock %} {% block content %}
+سلام {{ user.username }} 👋
+{{ user.bio or "بیوگرافی‌ای ثبت نکرده‌ای." }}
+
+دسترسی به موقعیت مکانی رد شد یا در دسترس نیست.
+شعاع جستجو (کیلومتر): 
+ 10
+افراد نزدیک
+{% endblock %}
