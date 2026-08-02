@@ -1,12 +1,16 @@
-{% extends "base.html" %} {% block title %}ورود{% endblock %} {% block content %}
-ورود
-{% if error %}
-{{ error }}
-
-{% endif %}
-نام کاربری 
- رمز عبور 
- ورود
-حساب نداری؟ ثبت‌نام کن
-
+{% extends "base.html" %}
+{% block title %}ورود{% endblock %}
+{% block content %}
+<div class="card auth-card">
+    <h1>ورود</h1>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <form method="post">
+        <label>نام کاربری</label>
+        <input type="text" name="username" required autofocus>
+        <label>رمز عبور</label>
+        <input type="password" name="password" required>
+        <button type="submit">ورود</button>
+    </form>
+    <p class="muted">حساب نداری؟ <a href="{{ url_for('register') }}">ثبت‌نام کن</a></p>
+</div>
 {% endblock %}
