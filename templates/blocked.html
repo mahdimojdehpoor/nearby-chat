@@ -1,13 +1,31 @@
-{% extends "base.html" %} {% block title %}کاربران بلاک‌شده{% endblock %} {% block content %}
-→ بازگشت
+{% extends "base.html" %}
+{% block title %}کاربران بلاک‌شده{% endblock %}
+{% block content %}
+<div class="card">
+    <p><a href="{{ url_for('nearby') }}">→ بازگشت</a></p>
+    <h1>کاربران بلاک‌شده</h1>
+    {% if blocked_users|length == 0 %}
+    <p class="muted">هیچ کاربری را بلاک نکرده‌اید.</p>
+    {% else %}
+    <ul class="blocked-list">
+        {% for u in blocked_users %}
+        <li>
+            <span>{{ u.username }}</span>
+            <button type="button" class="unblock-btn" data-id="{{ u.id }}">رفع بلاک</button>
+        </li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+</div>
 
-کاربران بلاک‌شده
-{% if blocked_users|length == 0 %}
-هیچ کاربری را بلاک نکرده‌اید.
-
-{% else %}
-{% for u in blocked_users %}
-{{ u.username }} رفع بلاک
-{% endfor %}
-{% endif %}
+<script>
+document.querySelectorAll('.unblock-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        fetch(`/api/unblock/${id}`, {method: 'POST'})
+            .then(r => r.json())
+            .then(data => { if (data.ok) btn.closest('li').remove(); });
+    });
+});
+</script>
 {% endblock %}
