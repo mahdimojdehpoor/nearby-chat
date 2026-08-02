@@ -1,11 +1,87 @@
-{% extends "base.html" %} {% block title %}چت با {{ other.username }}{% endblock %} {% block content %}
-→ بازگشت
-چت با {{ other.username }}
-🚩 گزارش 🚫 {{ 'رفع بلاک' if blocked else 'بلاک کردن' }}
-{% if blocked %}
-این ارتباط بلاک شده است و امکان ارسال پیام وجود ندارد.
+{% extends "base.html" %}
+{% block title %}چت با {{ other.username }}{% endblock %}
+{% block content %}
+<div class="card chat-card">
+    <div class="chat-header">
+        <a href="{{ url_for('nearby') }}">→ بازگشت</a>
+        <h2>چت با {{ other.username }}</h2>
+    </div>
+    <div class="chat-actions">
+        <button type="button" id="report-btn">🚩 گزارش</button>
+        <button type="button" id="block-btn" class="danger-btn" style="color:white;">🚫 {{ 'رفع بلاک' if blocked else 'بلاک کردن' }}</button>
+    </div>
+    {% if blocked %}
+    <p class="muted small" style="padding: 0 18px;">این ارتباط بلاک شده است و امکان ارسال پیام وجود ندارد.</p>
+    {% endif %}
+    <div id="messages" class="messages"></div>
+    <form id="send-form" class="send-form">
+        <input type="text" id="msg-input" placeholder="پیام خود را بنویس..." autocomplete="off" required {{ 'disabled' if blocked }}>
+        <button type="submit" {{ 'disabled' if blocked }}>ارسال</button>
+    </form>
+</div>
 
-{% endif %}
-پیام خود را بنویس...
- ارسال
+<script>
+const room = {{ room|tojson }};
+const otherId = {{ other.id|tojson }};
+let isBlocked = {{ 'true' if blocked else 'false' }};
+
+document.getElementById('report-btn').addEventListener('click', () => {
+    const reason = prompt('دلیل گزارش این کاربر را بنویسید:');
+    if (!reason) return;
+    fetch(`/api/report/${otherId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({reason})
+    }).then(r => r.json()).then(data => {
+        alert(data.ok ? 'گزارش شما ثبت شد.' : (data.error || 'خطا در ثبت گزارش'));
+    });
+});
+
+document.getElementById('block-btn').addEventListener('click', () => {
+    const url = isBlocked ? `/api/unblock/${otherId}` : `/api/block/${otherId}`;
+    const confirmMsg = isBlocked ? 'رفع بلاک این کاربر؟' : 'این کاربر بلاک شود؟ دیگر پیامی رد و بدل نخواهد شد.';
+    if (!confirm(confirmMsg)) return;
+    fetch(url, {method: 'POST'}).then(r => r.json()).then(data => {
+        if (data.ok) location.reload();
+    });
+});
+const messagesEl = document.getElementById('messages');
+const form = document.getElementById('send-form');
+const input = document.getElementById('msg-input');
+let lastTs = 0;
+
+function renderMessages(msgs) {
+    for (const m of msgs) {
+        const div = document.createElement('div');
+        div.className = 'msg ' + (m.is_me ? 'me' : 'them');
+        div.innerHTML = `<span class="msg-body"></span><span class="msg-time"></span>`;
+        div.querySelector('.msg-body').textContent = m.body;
+        div.querySelector('.msg-time').textContent = new Date(m.created_at * 1000).toLocaleTimeString('fa-IR', {hour: '2-digit', minute:'2-digit'});
+        messagesEl.appendChild(div);
+        lastTs = Math.max(lastTs, m.created_at);
+    }
+    if (msgs.length > 0) messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function poll() {
+    fetch(`/api/messages/${room}?since=${lastTs}`)
+        .then(r => r.json())
+        .then(data => { if (data.ok) renderMessages(data.messages); });
+}
+
+form.addEventListener('submit', e => {
+    e.preventDefault();
+    const body = input.value.trim();
+    if (!body) return;
+    input.value = '';
+    fetch(`/api/messages/${room}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({body})
+    }).then(poll);
+});
+
+poll();
+setInterval(poll, 2000);
+</script>
 {% endblock %}
